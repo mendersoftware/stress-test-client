@@ -125,7 +125,8 @@ func (c *Client) Authenticate() error {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	for {
-		req, err := http.NewRequest(http.MethodPost, c.Config.ServerURL+urlAuthRequest, bytes.NewBuffer(body))
+		buff := bytes.NewBuffer(body)
+		req, err := http.NewRequest(http.MethodPost, c.Config.ServerURL+urlAuthRequest, buff)
 		if err != nil {
 			return err
 		}
@@ -138,6 +139,7 @@ func (c *Client) Authenticate() error {
 			return err
 		}
 		elapsed := time.Since(start).Milliseconds()
+		defer response.Body.Close()
 
 		log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "authentication", response.StatusCode, elapsed)
 
@@ -219,6 +221,7 @@ func (c *Client) SendInventory() {
 		return
 	}
 	elapsed := time.Since(start).Milliseconds()
+	defer response.Body.Close()
 
 	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "send-inventory", response.StatusCode, elapsed)
 }
@@ -250,6 +253,7 @@ func (c *Client) UpdateCheck() {
 		return
 	}
 	elapsed := time.Since(start).Milliseconds()
+	defer response.Body.Close()
 
 	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "send-inventory", response.StatusCode, elapsed)
 
@@ -312,6 +316,7 @@ func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextA
 			return
 		}
 		elapsed := time.Since(start).Milliseconds()
+		defer response.Body.Close()
 
 		log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "deployment-status: "+status, response.StatusCode, elapsed)
 
