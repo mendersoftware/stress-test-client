@@ -47,7 +47,10 @@ const (
 	statusSuccess     = "success"
 )
 
-const attributeArtifactName = "artifact_name"
+const (
+	attributeArtifactName = "artifact_name"
+	attributeDeviceType   = "device_type"
+)
 
 type Client struct {
 	Index        int64
@@ -184,6 +187,10 @@ func (c *Client) SendInventory() {
 		{
 			Name:  attributeArtifactName,
 			Value: c.ArtifactName,
+		},
+		{
+			Name:  attributeDeviceType,
+			Value: c.Config.DeviceType,
 		},
 	}
 	for _, attr := range c.Config.InventoryAttributes {
