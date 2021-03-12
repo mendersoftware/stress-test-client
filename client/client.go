@@ -142,17 +142,19 @@ func (c *Client) Authenticate() error {
 			return err
 		}
 		elapsed := time.Since(start).Milliseconds()
-		defer response.Body.Close()
 
 		log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "authentication", response.StatusCode, elapsed)
 
 		if response.StatusCode == http.StatusOK {
+			defer response.Body.Close()
 			body, err := ioutil.ReadAll(response.Body)
 			if err != nil {
 				return err
 			}
 			c.JWTToken = string(body)
 			return nil
+		} else {
+			response.Body.Close()
 		}
 
 		time.Sleep(c.Config.AuthInterval)
@@ -223,12 +225,12 @@ func (c *Client) SendInventory() {
 
 	start := time.Now()
 	response, err := http.DefaultClient.Do(req)
+	response.Body.Close()
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
 		return
 	}
 	elapsed := time.Since(start).Milliseconds()
-	defer response.Body.Close()
 
 	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "send-inventory", response.StatusCode, elapsed)
 }
@@ -318,12 +320,12 @@ func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextA
 
 		start := time.Now()
 		response, err := http.DefaultClient.Do(req)
+		response.Body.Close()
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
 			return
 		}
 		elapsed := time.Since(start).Milliseconds()
-		defer response.Body.Close()
 
 		log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "deployment-status: "+status, response.StatusCode, elapsed)
 
