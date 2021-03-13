@@ -264,7 +264,7 @@ func (c *Client) UpdateCheck() {
 	elapsed := time.Since(start).Milliseconds()
 	defer response.Body.Close()
 
-	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "send-inventory", response.StatusCode, elapsed)
+	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "update-check", response.StatusCode, elapsed)
 
 	// received deployment
 	if response.StatusCode == http.StatusOK {
