@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/mendersoftware/stress-test-client/model"
@@ -51,6 +52,8 @@ const (
 	attributeArtifactName = "artifact_name"
 	attributeDeviceType   = "device_type"
 )
+
+var errUnauthorized = errors.New("unauthorized")
 
 type Client struct {
 	Index        int64
@@ -162,29 +165,45 @@ func (c *Client) Authenticate() error {
 }
 
 func (c *Client) Run() {
+	inventoryTicker := time.NewTicker(c.Config.InventoryInterval)
+	updateTicker := time.NewTicker(c.Config.UpdateInterval)
+
+auth:
 	err := c.Authenticate()
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
 		return
 	}
 
-	inventoryTicker := time.NewTicker(c.Config.InventoryInterval)
-	updateTicker := time.NewTicker(c.Config.UpdateInterval)
+	err = c.SendInventory()
+	if err == errUnauthorized {
+		goto auth
+	}
+	err = c.UpdateCheck()
+	if err == errUnauthorized {
+		goto auth
+	}
 
-	c.SendInventory()
-	c.UpdateCheck()
+	inventoryTicker.Reset(c.Config.InventoryInterval)
+	updateTicker.Reset(c.Config.UpdateInterval)
 
 	for {
 		select {
 		case <-inventoryTicker.C:
-			c.SendInventory()
+			err = c.SendInventory()
+			if err == errUnauthorized {
+				goto auth
+			}
 		case <-updateTicker.C:
-			c.UpdateCheck()
+			err = c.UpdateCheck()
+			if err == errUnauthorized {
+				goto auth
+			}
 		}
 	}
 }
 
-func (c *Client) SendInventory() {
+func (c *Client) SendInventory() error {
 	attributes := []*model.InventoryAttribute{
 		{
 			Name:  attributeArtifactName,
@@ -212,13 +231,13 @@ func (c *Client) SendInventory() {
 	body, err := json.Marshal(attributes)
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 
 	req, err := http.NewRequest(http.MethodPut, c.Config.ServerURL+urlPutInventory, bytes.NewBuffer(body))
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+c.JWTToken)
@@ -228,14 +247,19 @@ func (c *Client) SendInventory() {
 	response.Body.Close()
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 	elapsed := time.Since(start).Milliseconds()
 
 	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "send-inventory", response.StatusCode, elapsed)
+	if response.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+
+	return nil
 }
 
-func (c *Client) UpdateCheck() {
+func (c *Client) UpdateCheck() error {
 	deploymentNextRequest := &model.DeploymentNextRequest{
 		DeviceType:          c.Config.DeviceType,
 		ArtifactName:        c.Config.ArtifactName,
@@ -244,13 +268,13 @@ func (c *Client) UpdateCheck() {
 	body, err := json.Marshal(deploymentNextRequest)
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.Config.ServerURL+urlDeploymentsNext, bytes.NewBuffer(body))
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+c.JWTToken)
@@ -259,37 +283,49 @@ func (c *Client) UpdateCheck() {
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		return err
 	}
 	elapsed := time.Since(start).Milliseconds()
 	defer response.Body.Close()
 
 	log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "update-check", response.StatusCode, elapsed)
 
+	// unauthorized
+	if response.StatusCode == http.StatusUnauthorized {
+		return errUnauthorized
+	}
+
 	// received deployment
 	if response.StatusCode == http.StatusOK {
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
-			return
+			return err
 		}
 
 		response := &model.DeploymentNextResponse{}
 		err = json.Unmarshal(body, response)
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
-			return
+			return err
 		}
 
-		c.Deployment(response.ID, response.Artifact)
+		err = c.Deployment(response.ID, response.Artifact)
+		if err != nil {
+			return err
+		}
 
 		// report the new artifact name
 		c.ArtifactName = response.Artifact.Name
-		c.SendInventory()
+		err = c.SendInventory()
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextArtifact) {
+func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextArtifact) error {
 	statusURL := strings.Replace(urlDeploymentsStatus, "{id}", deploymentID, 1)
 
 	statuses := []string{
@@ -307,13 +343,13 @@ func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextA
 		body, err := json.Marshal(deploymentNextRequest)
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
-			return
+			return err
 		}
 
 		req, err := http.NewRequest(http.MethodPut, c.Config.ServerURL+statusURL, bytes.NewBuffer(body))
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
-			return
+			return err
 		}
 		req.Header.Add("Content-Type", "application/json")
 		req.Header.Add("Authorization", "Bearer "+c.JWTToken)
@@ -323,12 +359,18 @@ func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextA
 		response.Body.Close()
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
-			return
+			return err
 		}
 		elapsed := time.Since(start).Milliseconds()
 
 		log.Debugf("[%s] %-40s %d (%6d ms)", c.MACAddress, "deployment-status: "+status, response.StatusCode, elapsed)
 
+		// unauthorized
+		if response.StatusCode == http.StatusUnauthorized {
+			return errUnauthorized
+		}
+
 		time.Sleep(c.Config.DeploymentTime)
 	}
+	return nil
 }
