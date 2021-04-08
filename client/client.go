@@ -172,7 +172,8 @@ auth:
 	err := c.Authenticate()
 	if err != nil {
 		log.Errorf("[%s] %s", c.MACAddress, err)
-		return
+		time.Sleep(c.Config.AuthInterval)
+		goto auth
 	}
 
 	err = c.SendInventory()
