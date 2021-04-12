@@ -359,7 +359,9 @@ func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextA
 
 		start := time.Now()
 		response, err := http.DefaultClient.Do(req)
-		response.Body.Close()
+		if response != nil {
+			response.Body.Close()
+		}
 		if err != nil {
 			log.Errorf("[%s] %s", c.MACAddress, err)
 			return err
