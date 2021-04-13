@@ -319,7 +319,9 @@ func (c *Client) UpdateCheck() error {
 		}
 
 		// report the new artifact name
-		c.ArtifactName = response.Artifact.Name
+		if response.Artifact != nil {
+			c.ArtifactName = response.Artifact.Name
+		}
 		err = c.SendInventory()
 		if err != nil {
 			return err
