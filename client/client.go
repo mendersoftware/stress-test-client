@@ -313,13 +313,15 @@ func (c *Client) UpdateCheck() error {
 			return err
 		}
 
-		err = c.Deployment(response.ID, response.Artifact)
+		err = c.Deployment(response.ID)
 		if err != nil {
 			return err
 		}
 
 		// report the new artifact name
-		c.ArtifactName = response.Artifact.Name
+		if response.Artifact != nil {
+			c.ArtifactName = response.Artifact.Name
+		}
 		err = c.SendInventory()
 		if err != nil {
 			return err
@@ -328,7 +330,7 @@ func (c *Client) UpdateCheck() error {
 	return nil
 }
 
-func (c *Client) Deployment(deploymentID string, artifact *model.DeploymentNextArtifact) error {
+func (c *Client) Deployment(deploymentID string) error {
 	statusURL := strings.Replace(urlDeploymentsStatus, "{id}", deploymentID, 1)
 
 	statuses := []string{
